@@ -1,72 +1,4 @@
-        // Initialize Storyline communication
-        function initializeStorylineCommunication() {
-            console.log('Initializing Storyline communication...');
-            
-            // Method 1: Check if variables were set directly on window
-            if (window.storylineSlide) {
-                storylineData.currentSlide = window.storylineSlide;
-                slideName.textContent = window.storylineSlide;
-                console.log('Got slide from window.storylineSlide:', window.storylineSlide);
-            }
-            
-            if (window.storylineTutorStarted !== undefined) {
-                storylineData.hasStartedBefore = window.storylineTutorStarted;
-                console.log('Got TutorStarted from window.storylineTutorStarted:', window.storylineTutorStarted);
-            }
-            
-            // Method 2: Try to get Storyline player (usually won't work due to sandboxing)
-            const player = getStorylinePlayer();
-            
-            if (player) {
-                try {
-                    const currentSlide = player.GetVar("CurrentSlide");
-                    if (currentSlide && currentSlide !== "null") {
-                        storylineData.currentSlide = currentSlide;
-                        slideName.textContent = currentSlide;
-                        console.log('Got CurrentSlide from Storyline player:', currentSlide);
-                    }
-                    
-                    const hasStarted = player.GetVar("TutorStarted");
-                    if (hasStarted === true || hasStarted === "true") {
-                        storylineData.hasStartedBefore = true;
-                        console.log('Got TutorStarted from Storyline player');
-                    }
-                } catch (e) {
-                    console.log('Cannot access Storyline player (normal in sandboxed iframe)');
-                }
-            }
-            
-            // Method 3: Check URL parameters
-            const slideParam = getUrlParameter('slide');
-            const startedParam = getUrlParameter('started');
-            
-            if (slideParam && slideParam !== 'null') {
-                storylineData.currentSlide = decodeURIComponent(slideParam);
-                slideName.textContent = storylineData.currentSlide;
-                console.log('Got slide from URL:', storylineData.currentSlide);
-            }
-            
-            if (startedParam === 'true') {
-                storylineData.hasStartedBefore = true;
-                console.log('Got TutorStarted from URL');
-            }
-            
-            // Auto-start if microphone was previously authorized
-            if (storylineData.hasStartedBefore && state === 'idle') {
-                console.log('Auto-starting (microphone authorized)...');
-                storylineData.isAutoStarting = true;
-                autoStartNotice.classList.remove('hidden');
-                autoStartNotice.textContent = '🔄 Starting tutor automatically...';
-                
-                setTimeout(() => {
-                    startSession(true);
-                }, 1000);
-            } else if (state === 'idle') {
-                console.log('First time - need microphone permission');
-                statusText.textContent = 'Click Start to enable microphone';
-                mainButton.classList.add('pulse');
-            }
-        }<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -157,6 +89,22 @@
             background: #c82333;
         }
         
+        .main-button.pulse {
+            animation: pulse-button 2s infinite;
+        }
+        
+        @keyframes pulse-button {
+            0% {
+                box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(102, 126, 234, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
+            }
+        }
+        
         .audio-indicator {
             display: flex;
             justify-content: center;
@@ -243,21 +191,6 @@
             to { opacity: 1; transform: translateY(0); }
         }
         
-        .spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
         .hidden {
             display: none;
         }
@@ -317,7 +250,7 @@
         };
         
         // State
-        let state = 'idle'; // idle, connecting, connected, error
+        let state = 'idle';
         let pc = null;
         let dc = null;
         let localStream = null;
@@ -335,28 +268,26 @@
         const slideName = document.getElementById('slideName');
         const autoStartNotice = document.getElementById('autoStartNotice');
         
-        // Load course content from markdown file
+        // Load course content
         async function loadCourseContent() {
             try {
                 const response = await fetch('/course-content.md');
                 if (response.ok) {
                     COURSE_CONTENT = await response.text();
                     console.log('Course content loaded successfully');
-                } else {
-                    console.warn('Could not load course content, using default');
                 }
             } catch (error) {
                 console.warn('Error loading course content:', error);
             }
         }
         
-        // Function to get URL parameters
+        // Get URL parameters
         function getUrlParameter(name) {
             const urlParams = new URLSearchParams(window.location.search);
             return urlParams.get(name);
         }
         
-        // Function to get Storyline player if embedded
+        // Try to get Storyline player
         function getStorylinePlayer() {
             try {
                 if (window.parent && window.parent.GetPlayer) {
@@ -372,40 +303,11 @@
         function initializeStorylineCommunication() {
             console.log('Initializing Storyline communication...');
             
-            // Try to get Storyline player
-            const player = getStorylinePlayer();
-            
-            if (player) {
-                try {
-                    // Get current slide name using Project.SlideTitle
-                    const slideTitle = player.GetVar("Project.SlideTitle");
-                    if (slideTitle) {
-                        storylineData.currentSlide = slideTitle;
-                        slideName.textContent = slideTitle;
-                        console.log('Got slide from Storyline:', slideTitle);
-                    }
-                    
-                    // Check if tutor has been started before
-                    const hasStarted = player.GetVar("TutorStarted");
-                    if (hasStarted === true || hasStarted === "true") {
-                        storylineData.hasStartedBefore = true;
-                        console.log('Tutor has been started before');
-                    }
-                    
-                    // Set TutorStarted to true once we start
-                    if (!storylineData.hasStartedBefore && state === 'idle') {
-                        // Will be set when user clicks start
-                    }
-                } catch (e) {
-                    console.log('Error getting Storyline variables:', e);
-                }
-            }
-            
-            // Also check URL parameters as fallback
+            // Check URL parameters first
             const slideParam = getUrlParameter('slide');
             const startedParam = getUrlParameter('started');
             
-            if (slideParam) {
+            if (slideParam && slideParam !== 'null') {
                 storylineData.currentSlide = decodeURIComponent(slideParam);
                 slideName.textContent = storylineData.currentSlide;
                 console.log('Got slide from URL:', storylineData.currentSlide);
@@ -413,39 +315,57 @@
             
             if (startedParam === 'true') {
                 storylineData.hasStartedBefore = true;
-                console.log('Started param is true');
+                console.log('Got TutorStarted from URL');
             }
             
-            // Auto-start if user has started before and we're not already connected
+            // Auto-start if microphone was previously authorized
             if (storylineData.hasStartedBefore && state === 'idle') {
-                console.log('Auto-starting session...');
+                console.log('Auto-starting (microphone authorized)...');
                 storylineData.isAutoStarting = true;
                 autoStartNotice.classList.remove('hidden');
+                autoStartNotice.textContent = '🔄 Starting tutor automatically...';
                 
-                // Small delay to show the notice
                 setTimeout(() => {
                     startSession(true);
-                }, 1500);
+                }, 1000);
+            } else if (state === 'idle') {
+                console.log('First time - need microphone permission');
+                statusText.textContent = 'Click Start to enable microphone';
             }
         }
         
-        // Listen for messages from parent window (Storyline)
+        // Listen for messages from parent window
         window.addEventListener('message', (event) => {
             try {
                 const data = event.data;
-                console.log('Received message:', data);
+                console.log('Vercel app received message:', data, 'from:', event.origin);
                 
-                if (data.type === 'slideChange') {
-                    storylineData.currentSlide = data.slideName;
-                    slideName.textContent = data.slideName;
+                if (data.type === 'storylineData' || data.type === 'slideChange') {
+                    console.log('Processing Storyline data:', data);
                     
-                    // Update tutor started status
-                    if (data.tutorStarted !== undefined) {
-                        storylineData.hasStartedBefore = data.tutorStarted;
+                    if (data.slideName && data.slideName !== 'null' && data.slideName !== 'Unknown Slide') {
+                        storylineData.currentSlide = data.slideName;
+                        slideName.textContent = data.slideName;
+                        console.log('Updated slide display to:', data.slideName);
                     }
                     
-                    // If connected, send slide change to AI
-                    if (dc && dc.readyState === 'open') {
+                    if (data.tutorStarted !== undefined) {
+                        storylineData.hasStartedBefore = (data.tutorStarted === true || data.tutorStarted === 'true');
+                        console.log('TutorStarted status:', storylineData.hasStartedBefore);
+                        
+                        // Auto-start if just became true
+                        if (storylineData.hasStartedBefore && state === 'idle' && !storylineData.isAutoStarting) {
+                            console.log('Auto-starting on status change...');
+                            storylineData.isAutoStarting = true;
+                            autoStartNotice.classList.remove('hidden');
+                            setTimeout(() => {
+                                startSession(true);
+                            }, 800);
+                        }
+                    }
+                    
+                    // Send slide change to AI if connected
+                    if (dc && dc.readyState === 'open' && data.slideName) {
                         dc.send(JSON.stringify({
                             type: "conversation.item.create",
                             item: {
@@ -457,16 +377,7 @@
                                 }]
                             }
                         }));
-                    }
-                    
-                    // Auto-start on slide change if previously started
-                    if (storylineData.hasStartedBefore && state === 'idle') {
-                        console.log('Auto-starting on slide change...');
-                        storylineData.isAutoStarting = true;
-                        autoStartNotice.classList.remove('hidden');
-                        setTimeout(() => {
-                            startSession(true);
-                        }, 1500);
+                        console.log('Sent slide change to AI');
                     }
                 }
             } catch (e) {
@@ -474,11 +385,10 @@
             }
         });
         
+        // Update UI based on state
         function updateUI() {
-            // Update connection indicator
             connectionIndicator.className = `connection-indicator ${state}`;
             
-            // Update button
             switch(state) {
                 case 'idle':
                     mainButton.textContent = storylineData.isAutoStarting ? 'Auto-starting...' : 'Start Conversation';
@@ -529,32 +439,18 @@
         }
         
         async function startSession(isAutoStart = false) {
-            console.log('🎬 Starting session...', isAutoStart ? '(auto-start)' : '(manual)');
+            console.log('Starting session...', isAutoStart ? '(auto-start)' : '(manual)');
             
-            // Hide auto-start notice
             autoStartNotice.classList.add('hidden');
             storylineData.isAutoStarting = false;
             
-            // Set TutorStarted to true in Storyline
+            // Set TutorStarted to true
             if (!storylineData.hasStartedBefore) {
-                // Mark that microphone has been authorized (persists across sessions)
                 try {
                     sessionStorage.setItem('microphoneAuthorized', 'true');
                 } catch(e) {}
                 
-                // Method 1: Try direct access to Storyline player
-                const player = getStorylinePlayer();
-                if (player) {
-                    try {
-                        player.SetVar("TutorStarted", true);
-                        storylineData.hasStartedBefore = true;
-                        console.log('Set TutorStarted to true in Storyline');
-                    } catch (e) {
-                        console.log('Could not set Storyline variable directly:', e);
-                    }
-                }
-                
-                // Method 2: Send message to parent to set the variable
+                // Try to notify parent
                 try {
                     window.parent.postMessage({
                         type: 'setStorylineVariable',
@@ -572,8 +468,7 @@
                 state = 'connecting';
                 updateUI();
                 
-                // Get microphone access
-                console.log('📍 Step 1: Requesting microphone...');
+                // Get microphone
                 statusText.textContent = 'Requesting microphone access...';
                 localStream = await navigator.mediaDevices.getUserMedia({
                     audio: {
@@ -582,16 +477,14 @@
                         autoGainControl: true,
                     }
                 });
-                console.log('✅ Microphone access granted');
+                console.log('Microphone access granted');
                 
                 // Set up audio monitoring
-                console.log('📍 Step 2: Setting up audio monitoring...');
                 audioContext = new AudioContext();
                 analyser = audioContext.createAnalyser();
                 const source = audioContext.createMediaStreamSource(localStream);
                 source.connect(analyser);
                 
-                // Monitor audio levels
                 const monitorAudio = () => {
                     const dataArray = new Uint8Array(analyser.frequencyBinCount);
                     analyser.getByteFrequencyData(dataArray);
@@ -600,55 +493,46 @@
                     animationFrame = requestAnimationFrame(monitorAudio);
                 };
                 monitorAudio();
-                console.log('✅ Audio monitoring active');
                 
                 // Create WebRTC connection
-                console.log('📍 Step 3: Creating WebRTC connection...');
                 statusText.textContent = 'Creating connection...';
                 pc = new RTCPeerConnection({
                     iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
                 });
                 
-                // Add debugging for connection states
                 pc.oniceconnectionstatechange = () => {
-                    console.log('🔌 ICE connection state:', pc.iceConnectionState);
+                    console.log('ICE connection state:', pc.iceConnectionState);
                 };
                 
                 pc.onconnectionstatechange = () => {
-                    console.log('🔌 Connection state:', pc.connectionState);
+                    console.log('Connection state:', pc.connectionState);
                 };
                 
-                // Add audio track
                 const audioTrack = localStream.getAudioTracks()[0];
                 pc.addTrack(audioTrack, localStream);
-                console.log('✅ Audio track added');
                 
-                // Handle incoming audio
                 pc.ontrack = (event) => {
-                    console.log('📞 Received remote track');
+                    console.log('Received remote track');
                     remoteAudio.srcObject = event.streams[0];
                 };
                 
-                // Create data channel for OpenAI events
-                console.log('📍 Step 4: Creating data channel...');
+                // Create data channel
                 dc = pc.createDataChannel('oai-events');
                 
                 dc.onopen = () => {
-                    console.log('✅ Data channel opened');
+                    console.log('Data channel opened');
                     state = 'connected';
                     updateUI();
                     
-                    // Create context-aware instructions
                     const currentSlideContext = storylineData.currentSlide !== 'Unknown Slide' ? 
                         `The learner is currently on the slide titled: "${storylineData.currentSlide}".` : '';
                     
                     const greeting = isAutoStart ? 
-                        `The learner has returned to the course and is continuing from "${storylineData.currentSlide}".` :
-                        `The learner has just started the tutor for the first time on "${storylineData.currentSlide}".`;
+                        `The learner has returned and is continuing from "${storylineData.currentSlide}".` :
+                        `The learner has just started on "${storylineData.currentSlide}".`;
                     
-                    // Configure the AI tutor with course content
                     const instructions = COURSE_CONTENT ? 
-                        `You are an AI tutor helping learners with this training course. 
+                        `You are an AI tutor helping with this training course. 
                          
                          COURSE CONTENT:
                          ${COURSE_CONTENT}
@@ -659,18 +543,13 @@
                          
                          Your role:
                          - Answer questions about the training material
-                         - Reference the current slide ("${storylineData.currentSlide}") when relevant
-                         - Guide learners through scenarios and activities
-                         - Encourage reflection and understanding
-                         - Stay friendly, supportive, and conversational
-                         - If asked about something not in the course, politely redirect to the material
-                         
-                         ${isAutoStart ? 'Welcome the learner back and ask if they have questions about the current slide.' : 'Introduce yourself briefly and ask how you can help with the current slide.'}
+                         - Reference the current slide when relevant
+                         - Guide learners through activities
+                         - Stay friendly and conversational
                          
                          Keep responses concise for voice conversation.` :
-                        `You are a friendly AI tutor. The learner is on "${storylineData.currentSlide}". Help them understand the course material and answer their questions.`;
+                        `You are a friendly AI tutor. The learner is on "${storylineData.currentSlide}". Help them with the course material.`;
                     
-                    console.log('📤 Sending session configuration...');
                     // Send session configuration
                     dc.send(JSON.stringify({
                         type: "session.update",
@@ -690,36 +569,32 @@
                 
                 dc.onmessage = (event) => {
                     const msg = JSON.parse(event.data);
-                    console.log('📥 Received message:', msg.type);
+                    console.log('Received from OpenAI:', msg.type);
                     
                     if (msg.type === 'error') {
-                        console.error('❌ Error from OpenAI:', msg.error);
+                        console.error('OpenAI error:', msg.error);
                         showError(msg.error?.message || 'An error occurred');
                     }
                 };
                 
                 dc.onerror = (error) => {
-                    console.error('❌ Data channel error:', error);
+                    console.error('Data channel error:', error);
                 };
                 
                 dc.onclose = () => {
-                    console.log('📪 Data channel closed');
+                    console.log('Data channel closed');
                 };
                 
-                // Create and send offer
-                console.log('📍 Step 5: Creating offer...');
+                // Create offer
                 statusText.textContent = 'Creating offer...';
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
-                console.log('✅ Offer created');
                 
-                // Wait for ICE gathering with timeout
-                console.log('📍 Step 6: Gathering ICE candidates...');
+                // Wait for ICE gathering
                 statusText.textContent = 'Gathering connection details...';
                 await new Promise((resolve) => {
                     let timeout;
                     const checkState = () => {
-                        console.log('🧊 ICE gathering state:', pc.iceGatheringState);
                         if (pc.iceGatheringState === 'complete') {
                             clearTimeout(timeout);
                             resolve();
@@ -729,22 +604,16 @@
                     pc.onicegatheringstatechange = checkState;
                     checkState();
                     
-                    // Timeout after 5 seconds
                     timeout = setTimeout(() => {
-                        console.warn('⚠️ ICE gathering timeout, proceeding anyway');
+                        console.warn('ICE gathering timeout, proceeding');
                         resolve();
                     }, 5000);
                 });
-                console.log('✅ ICE candidates gathered');
                 
-                // Send offer to server - USING JSON FORMAT
-                console.log('📍 Step 7: Sending to OpenAI...');
+                // Send to server
                 statusText.textContent = 'Connecting to AI service...';
                 const apiUrl = API_ENDPOINT + `?model=${REALTIME_MODEL}`;
-                console.log('🌐 API URL:', apiUrl);
-                console.log('📤 Sending SDP offer (length:', pc.localDescription.sdp.length, ')');
                 
-                // Send as JSON instead of raw SDP
                 const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -753,27 +622,20 @@
                     })
                 });
                 
-                console.log('📥 Response status:', response.status);
-                
                 if (!response.ok) {
                     const errorText = await response.text();
-                    console.error('❌ Server error:', errorText);
                     throw new Error(`Server error (${response.status}): ${errorText || response.statusText}`);
                 }
                 
-                // Parse JSON response
                 const responseData = await response.json();
                 const answer = responseData.sdp || responseData;
-                console.log('✅ Received answer (length:', answer.length, ')');
                 
-                console.log('📍 Step 8: Setting remote description...');
                 await pc.setRemoteDescription({ type: 'answer', sdp: answer });
-                console.log('✅ Remote description set - connection should establish');
                 
                 statusText.textContent = 'Waiting for connection...';
                 
             } catch (error) {
-                console.error('❌ Session error:', error);
+                console.error('Session error:', error);
                 showError(error.message);
                 state = 'error';
                 storylineData.isAutoStarting = false;
