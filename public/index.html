@@ -37,6 +37,19 @@
             font-size: 24px;
         }
         
+        .slide-info {
+            background: #f0f4f8;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: #555;
+        }
+        
+        .slide-info strong {
+            color: #333;
+        }
+        
         .status {
             color: #666;
             margin-bottom: 20px;
@@ -147,6 +160,21 @@
             margin-top: 15px;
         }
         
+        .auto-start-notice {
+            background: #fff3cd;
+            color: #856404;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            animation: fadeIn 0.5s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
         .spinner {
             border: 3px solid #f3f3f3;
             border-top: 3px solid #667eea;
@@ -170,6 +198,14 @@
 <body>
     <div class="container">
         <h1>🎓 AI Course Tutor</h1>
+        
+        <div class="slide-info" id="slideInfo">
+            <strong>Current Slide:</strong> <span id="slideName">Loading...</span>
+        </div>
+        
+        <div class="auto-start-notice hidden" id="autoStartNotice">
+            🔄 Auto-starting session...
+        </div>
         
         <div class="status">
             <span class="connection-indicator idle" id="connectionIndicator"></span>
@@ -205,23 +241,12 @@
         // Course content will be loaded here
         let COURSE_CONTENT = "";
         
-        // Load course content from markdown file
-        async function loadCourseContent() {
-            try {
-                const response = await fetch('/course-content.md');
-                if (response.ok) {
-                    COURSE_CONTENT = await response.text();
-                    console.log('Course content loaded successfully');
-                } else {
-                    console.warn('Could not load course content, using default');
-                }
-            } catch (error) {
-                console.warn('Error loading course content:', error);
-            }
-        }
-        
-        // Load content on page load
-        loadCourseContent();
+        // Storyline integration variables
+        let storylineData = {
+            currentSlide: 'Unknown Slide',
+            hasStartedBefore: false,
+            isAutoStarting: false
+        };
         
         // State
         let state = 'idle'; // idle, connecting, connected, error
@@ -239,6 +264,147 @@
         const errorMessage = document.getElementById('errorMessage');
         const audioIndicator = document.getElementById('audioIndicator');
         const remoteAudio = document.getElementById('remoteAudio');
+        const slideName = document.getElementById('slideName');
+        const autoStartNotice = document.getElementById('autoStartNotice');
+        
+        // Load course content from markdown file
+        async function loadCourseContent() {
+            try {
+                const response = await fetch('/course-content.md');
+                if (response.ok) {
+                    COURSE_CONTENT = await response.text();
+                    console.log('Course content loaded successfully');
+                } else {
+                    console.warn('Could not load course content, using default');
+                }
+            } catch (error) {
+                console.warn('Error loading course content:', error);
+            }
+        }
+        
+        // Function to get URL parameters
+        function getUrlParameter(name) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(name);
+        }
+        
+        // Function to get Storyline player if embedded
+        function getStorylinePlayer() {
+            try {
+                if (window.parent && window.parent.GetPlayer) {
+                    return window.parent.GetPlayer();
+                }
+            } catch (e) {
+                console.log('Not embedded in Storyline or access denied');
+            }
+            return null;
+        }
+        
+        // Initialize Storyline communication
+        function initializeStorylineCommunication() {
+            console.log('Initializing Storyline communication...');
+            
+            // Try to get Storyline player
+            const player = getStorylinePlayer();
+            
+            if (player) {
+                try {
+                    // Get current slide name using Project.SlideTitle
+                    const slideTitle = player.GetVar("Project.SlideTitle");
+                    if (slideTitle) {
+                        storylineData.currentSlide = slideTitle;
+                        slideName.textContent = slideTitle;
+                        console.log('Got slide from Storyline:', slideTitle);
+                    }
+                    
+                    // Check if tutor has been started before
+                    const hasStarted = player.GetVar("TutorStarted");
+                    if (hasStarted === true || hasStarted === "true") {
+                        storylineData.hasStartedBefore = true;
+                        console.log('Tutor has been started before');
+                    }
+                    
+                    // Set TutorStarted to true once we start
+                    if (!storylineData.hasStartedBefore && state === 'idle') {
+                        // Will be set when user clicks start
+                    }
+                } catch (e) {
+                    console.log('Error getting Storyline variables:', e);
+                }
+            }
+            
+            // Also check URL parameters as fallback
+            const slideParam = getUrlParameter('slide');
+            const startedParam = getUrlParameter('started');
+            
+            if (slideParam) {
+                storylineData.currentSlide = decodeURIComponent(slideParam);
+                slideName.textContent = storylineData.currentSlide;
+                console.log('Got slide from URL:', storylineData.currentSlide);
+            }
+            
+            if (startedParam === 'true') {
+                storylineData.hasStartedBefore = true;
+                console.log('Started param is true');
+            }
+            
+            // Auto-start if user has started before and we're not already connected
+            if (storylineData.hasStartedBefore && state === 'idle') {
+                console.log('Auto-starting session...');
+                storylineData.isAutoStarting = true;
+                autoStartNotice.classList.remove('hidden');
+                
+                // Small delay to show the notice
+                setTimeout(() => {
+                    startSession(true);
+                }, 1500);
+            }
+        }
+        
+        // Listen for messages from parent window (Storyline)
+        window.addEventListener('message', (event) => {
+            try {
+                const data = event.data;
+                console.log('Received message:', data);
+                
+                if (data.type === 'slideChange') {
+                    storylineData.currentSlide = data.slideName;
+                    slideName.textContent = data.slideName;
+                    
+                    // Update tutor started status
+                    if (data.tutorStarted !== undefined) {
+                        storylineData.hasStartedBefore = data.tutorStarted;
+                    }
+                    
+                    // If connected, send slide change to AI
+                    if (dc && dc.readyState === 'open') {
+                        dc.send(JSON.stringify({
+                            type: "conversation.item.create",
+                            item: {
+                                type: "message",
+                                role: "system",
+                                content: [{
+                                    type: "text",
+                                    text: `User has navigated to slide: "${data.slideName}"`
+                                }]
+                            }
+                        }));
+                    }
+                    
+                    // Auto-start on slide change if previously started
+                    if (storylineData.hasStartedBefore && state === 'idle') {
+                        console.log('Auto-starting on slide change...');
+                        storylineData.isAutoStarting = true;
+                        autoStartNotice.classList.remove('hidden');
+                        setTimeout(() => {
+                            startSession(true);
+                        }, 1500);
+                    }
+                }
+            } catch (e) {
+                console.log('Error processing message:', e);
+            }
+        });
         
         function updateUI() {
             // Update connection indicator
@@ -247,10 +413,10 @@
             // Update button
             switch(state) {
                 case 'idle':
-                    mainButton.textContent = 'Start Conversation';
-                    mainButton.disabled = false;
+                    mainButton.textContent = storylineData.isAutoStarting ? 'Auto-starting...' : 'Start Conversation';
+                    mainButton.disabled = storylineData.isAutoStarting;
                     mainButton.className = 'main-button';
-                    statusText.textContent = 'Ready to start';
+                    statusText.textContent = storylineData.isAutoStarting ? 'Auto-starting session...' : 'Ready to start';
                     break;
                 case 'connecting':
                     mainButton.textContent = 'Connecting...';
@@ -294,8 +460,27 @@
             });
         }
         
-        async function startSession() {
-            console.log('🎬 Starting session...');
+        async function startSession(isAutoStart = false) {
+            console.log('🎬 Starting session...', isAutoStart ? '(auto-start)' : '(manual)');
+            
+            // Hide auto-start notice
+            autoStartNotice.classList.add('hidden');
+            storylineData.isAutoStarting = false;
+            
+            // Set TutorStarted to true in Storyline
+            if (!storylineData.hasStartedBefore) {
+                const player = getStorylinePlayer();
+                if (player) {
+                    try {
+                        player.SetVar("TutorStarted", true);
+                        storylineData.hasStartedBefore = true;
+                        console.log('Set TutorStarted to true in Storyline');
+                    } catch (e) {
+                        console.log('Could not set Storyline variable:', e);
+                    }
+                }
+            }
+            
             try {
                 state = 'connecting';
                 updateUI();
@@ -366,6 +551,14 @@
                     state = 'connected';
                     updateUI();
                     
+                    // Create context-aware instructions
+                    const currentSlideContext = storylineData.currentSlide !== 'Unknown Slide' ? 
+                        `The learner is currently on the slide titled: "${storylineData.currentSlide}".` : '';
+                    
+                    const greeting = isAutoStart ? 
+                        `The learner has returned to the course and is continuing from "${storylineData.currentSlide}".` :
+                        `The learner has just started the tutor for the first time on "${storylineData.currentSlide}".`;
+                    
                     // Configure the AI tutor with course content
                     const instructions = COURSE_CONTENT ? 
                         `You are an AI tutor helping learners with this training course. 
@@ -373,16 +566,22 @@
                          COURSE CONTENT:
                          ${COURSE_CONTENT}
                          
+                         CURRENT CONTEXT:
+                         ${greeting}
+                         ${currentSlideContext}
+                         
                          Your role:
                          - Answer questions about the training material
-                         - Reference specific slides when relevant
+                         - Reference the current slide ("${storylineData.currentSlide}") when relevant
                          - Guide learners through scenarios and activities
                          - Encourage reflection and understanding
                          - Stay friendly, supportive, and conversational
                          - If asked about something not in the course, politely redirect to the material
                          
+                         ${isAutoStart ? 'Welcome the learner back and ask if they have questions about the current slide.' : 'Introduce yourself briefly and ask how you can help with the current slide.'}
+                         
                          Keep responses concise for voice conversation.` :
-                        `You are a friendly AI tutor. Help the learner understand the course material and answer their questions.`;
+                        `You are a friendly AI tutor. The learner is on "${storylineData.currentSlide}". Help them understand the course material and answer their questions.`;
                     
                     console.log('📤 Sending session configuration...');
                     // Send session configuration
@@ -490,6 +689,8 @@
                 console.error('❌ Session error:', error);
                 showError(error.message);
                 state = 'error';
+                storylineData.isAutoStarting = false;
+                autoStartNotice.classList.add('hidden');
                 updateUI();
                 stopSession();
             }
@@ -497,6 +698,8 @@
         
         function stopSession() {
             state = 'idle';
+            storylineData.isAutoStarting = false;
+            autoStartNotice.classList.add('hidden');
             
             if (animationFrame) {
                 cancelAnimationFrame(animationFrame);
@@ -526,7 +729,7 @@
             switch(state) {
                 case 'idle':
                 case 'error':
-                    startSession();
+                    startSession(false);
                     break;
                 case 'connected':
                     stopSession();
@@ -534,8 +737,20 @@
             }
         }
         
-        // Initialize
-        updateUI();
+        // Initialize on page load
+        window.addEventListener('load', () => {
+            console.log('Page loaded, initializing...');
+            loadCourseContent();
+            initializeStorylineCommunication();
+            updateUI();
+        });
+        
+        // Initialize immediately if already loaded
+        if (document.readyState === 'complete') {
+            loadCourseContent();
+            initializeStorylineCommunication();
+            updateUI();
+        }
     </script>
 </body>
 </html>
