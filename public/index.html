@@ -334,28 +334,33 @@
             }
         }
         
-        // Listen for messages from parent window
+        // Listen for messages from parent window - set up immediately
+        console.log('Setting up message listener...');
         window.addEventListener('message', (event) => {
+            // Log EVERY message for debugging
+            console.log('=== MESSAGE RECEIVED ===');
+            console.log('From origin:', event.origin);
+            console.log('Data:', event.data);
+            
             try {
                 const data = event.data;
-                console.log('Vercel app received message:', data, 'from:', event.origin);
                 
                 if (data.type === 'storylineData' || data.type === 'slideChange') {
-                    console.log('Processing Storyline data:', data);
+                    console.log('✅ This is Storyline data!');
                     
                     if (data.slideName && data.slideName !== 'null' && data.slideName !== 'Unknown Slide') {
                         storylineData.currentSlide = data.slideName;
                         slideName.textContent = data.slideName;
-                        console.log('Updated slide display to:', data.slideName);
+                        console.log('✅ Updated slide display to:', data.slideName);
                     }
                     
                     if (data.tutorStarted !== undefined) {
                         storylineData.hasStartedBefore = (data.tutorStarted === true || data.tutorStarted === 'true');
-                        console.log('TutorStarted status:', storylineData.hasStartedBefore);
+                        console.log('✅ TutorStarted status:', storylineData.hasStartedBefore);
                         
                         // Auto-start if just became true
                         if (storylineData.hasStartedBefore && state === 'idle' && !storylineData.isAutoStarting) {
-                            console.log('Auto-starting on status change...');
+                            console.log('✅ Auto-starting on status change...');
                             storylineData.isAutoStarting = true;
                             autoStartNotice.classList.remove('hidden');
                             setTimeout(() => {
@@ -377,13 +382,14 @@
                                 }]
                             }
                         }));
-                        console.log('Sent slide change to AI');
+                        console.log('✅ Sent slide change to AI');
                     }
                 }
             } catch (e) {
-                console.log('Error processing message:', e);
+                console.log('❌ Error processing message:', e);
             }
         });
+        console.log('Message listener ready!');
         
         // Update UI based on state
         function updateUI() {
