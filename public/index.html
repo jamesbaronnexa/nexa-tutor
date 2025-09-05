@@ -469,6 +469,12 @@
             
             // Set TutorStarted to true in Storyline
             if (!storylineData.hasStartedBefore) {
+                // Mark that microphone has been authorized (persists across sessions)
+                try {
+                    sessionStorage.setItem('microphoneAuthorized', 'true');
+                } catch(e) {}
+                
+                // Method 1: Try direct access to Storyline player
                 const player = getStorylinePlayer();
                 if (player) {
                     try {
@@ -476,8 +482,21 @@
                         storylineData.hasStartedBefore = true;
                         console.log('Set TutorStarted to true in Storyline');
                     } catch (e) {
-                        console.log('Could not set Storyline variable:', e);
+                        console.log('Could not set Storyline variable directly:', e);
                     }
+                }
+                
+                // Method 2: Send message to parent to set the variable
+                try {
+                    window.parent.postMessage({
+                        type: 'setStorylineVariable',
+                        variable: 'TutorStarted',
+                        value: true
+                    }, '*');
+                    storylineData.hasStartedBefore = true;
+                    console.log('Sent message to parent to set TutorStarted');
+                } catch (e) {
+                    console.log('Could not send message to parent:', e);
                 }
             }
             
