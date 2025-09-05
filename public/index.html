@@ -1,4 +1,72 @@
-<!DOCTYPE html>
+        // Initialize Storyline communication
+        function initializeStorylineCommunication() {
+            console.log('Initializing Storyline communication...');
+            
+            // Method 1: Check if variables were set directly on window
+            if (window.storylineSlide) {
+                storylineData.currentSlide = window.storylineSlide;
+                slideName.textContent = window.storylineSlide;
+                console.log('Got slide from window.storylineSlide:', window.storylineSlide);
+            }
+            
+            if (window.storylineTutorStarted !== undefined) {
+                storylineData.hasStartedBefore = window.storylineTutorStarted;
+                console.log('Got TutorStarted from window.storylineTutorStarted:', window.storylineTutorStarted);
+            }
+            
+            // Method 2: Try to get Storyline player (usually won't work due to sandboxing)
+            const player = getStorylinePlayer();
+            
+            if (player) {
+                try {
+                    const currentSlide = player.GetVar("CurrentSlide");
+                    if (currentSlide && currentSlide !== "null") {
+                        storylineData.currentSlide = currentSlide;
+                        slideName.textContent = currentSlide;
+                        console.log('Got CurrentSlide from Storyline player:', currentSlide);
+                    }
+                    
+                    const hasStarted = player.GetVar("TutorStarted");
+                    if (hasStarted === true || hasStarted === "true") {
+                        storylineData.hasStartedBefore = true;
+                        console.log('Got TutorStarted from Storyline player');
+                    }
+                } catch (e) {
+                    console.log('Cannot access Storyline player (normal in sandboxed iframe)');
+                }
+            }
+            
+            // Method 3: Check URL parameters
+            const slideParam = getUrlParameter('slide');
+            const startedParam = getUrlParameter('started');
+            
+            if (slideParam && slideParam !== 'null') {
+                storylineData.currentSlide = decodeURIComponent(slideParam);
+                slideName.textContent = storylineData.currentSlide;
+                console.log('Got slide from URL:', storylineData.currentSlide);
+            }
+            
+            if (startedParam === 'true') {
+                storylineData.hasStartedBefore = true;
+                console.log('Got TutorStarted from URL');
+            }
+            
+            // Auto-start if microphone was previously authorized
+            if (storylineData.hasStartedBefore && state === 'idle') {
+                console.log('Auto-starting (microphone authorized)...');
+                storylineData.isAutoStarting = true;
+                autoStartNotice.classList.remove('hidden');
+                autoStartNotice.textContent = '🔄 Starting tutor automatically...';
+                
+                setTimeout(() => {
+                    startSession(true);
+                }, 1000);
+            } else if (state === 'idle') {
+                console.log('First time - need microphone permission');
+                statusText.textContent = 'Click Start to enable microphone';
+                mainButton.classList.add('pulse');
+            }
+        }<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
